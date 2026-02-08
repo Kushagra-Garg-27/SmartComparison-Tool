@@ -1,0 +1,5 @@
+{
+  "name": "SmartCompare AI",
+  "description": "An intelligent, in-page e-commerce comparison tool powered by Gemini. It detects the product you are viewing, normalizes data, and instantly compares prices, seller trust, and reviews across trusted platforms to aid decision-making.",
+  "requestFramePermissions": []
+}
