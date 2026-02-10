@@ -12,16 +12,21 @@ declare var chrome: any;
 
 interface AppProps {
   isExtensionOverride?: boolean;
+  initialViewState?: ViewState;
 }
 
-const App: React.FC<AppProps> = ({ isExtensionOverride = false }) => {
+const App: React.FC<AppProps> = ({ isExtensionOverride = false, initialViewState }) => {
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   
-  // Default to HIDDEN if extension, MINIMIZED if web demo
-  const [viewState, setViewState] = useState<ViewState>(
-    isExtensionOverride ? ViewState.HIDDEN : ViewState.MINIMIZED
-  );
+  // Initialize ViewState:
+  // 1. Use prop if provided (e.g. from content script detection)
+  // 2. Else default to HIDDEN if extension (manual toggle)
+  // 3. Else MINIMIZED if web demo
+  const [viewState, setViewState] = useState<ViewState>(() => {
+    if (initialViewState !== undefined) return initialViewState;
+    return isExtensionOverride ? ViewState.HIDDEN : ViewState.MINIMIZED;
+  });
   
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const [isExtensionMode, setIsExtensionMode] = useState(isExtensionOverride);
@@ -41,11 +46,6 @@ const App: React.FC<AppProps> = ({ isExtensionOverride = false }) => {
       
       if (isExt) {
         setIsExtensionMode(true);
-        // If we are mounting for the first time in extension mode, we might want to start minimized or hidden
-        if (!isExtensionOverride) {
-           setViewState(ViewState.EXPANDED); // Side panel default
-        }
-
         // Securely check API key status without exposing it
         const hasKey = await checkAuthStatus();
         if (!hasKey) {
@@ -60,7 +60,8 @@ const App: React.FC<AppProps> = ({ isExtensionOverride = false }) => {
 
     // Listen for toggle event from content script
     const handleToggle = () => {
-      setViewState(prev => prev === ViewState.HIDDEN ? ViewState.EXPANDED : ViewState.HIDDEN);
+      // Toggle Logic: If hidden or minimized, expand it. If expanded, hide it.
+      setViewState(prev => (prev === ViewState.EXPANDED ? ViewState.HIDDEN : ViewState.EXPANDED));
     };
     window.addEventListener('SMARTCOMPARE_TOGGLE', handleToggle);
 
@@ -282,7 +283,9 @@ const App: React.FC<AppProps> = ({ isExtensionOverride = false }) => {
         onRefreshPrices={handleRefreshPrices}
         isRefreshingPrices={isRefreshingPrices}
         lastUpdated={lastUpdated}
-        isPanelMode={isExtensionMode}
+        // Important: When injected as a content script (isExtensionOverride=true), 
+        // we want floating overlay behavior (isPanelMode=false), not full-screen side-panel behavior.
+        isPanelMode={isExtensionMode && !isExtensionOverride}
       />
     </div>
   );

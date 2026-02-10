@@ -4,7 +4,6 @@ import { Product, Review, AnalysisResult, ChatMessage } from "./types";
 declare var chrome: any;
 
 // The API Key is safely injected here by Vite's define plugin during build.
-// Since this file becomes background.js (Service Worker), it is isolated from the webpage.
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 const ANALYSIS_MODEL = 'gemini-3-flash-preview';
@@ -13,7 +12,6 @@ const ANALYSIS_MODEL = 'gemini-3-flash-preview';
 
 chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (response: any) => void) => {
   if (message.action === "CHECK_AUTH_STATUS") {
-    // Return true if key exists, but DO NOT return the key itself
     sendResponse({ hasKey: !!apiKey });
     return false; // Synchronous response
   }
@@ -29,7 +27,10 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
   }
   
   if (message.action === "TOGGLE_OVERLAY") {
-     // Forward to active tab (handled by content script)
+     // This message might come from the UI itself wanting to close/open via message, 
+     // but usually we rely on the internal state or the action click.
+     // We can just return success.
+     sendResponse({ status: "ok" });
      return false; 
   }
 });
@@ -47,10 +48,12 @@ chrome.runtime.onConnect.addListener((port: any) => {
   }
 });
 
+// Capture the extension icon click and toggle the content script UI
 chrome.action.onClicked.addListener((tab: any) => {
   if (tab.id) {
     chrome.tabs.sendMessage(tab.id, { action: "TOGGLE_OVERLAY" }).catch((err: any) => {
-      console.warn("Could not send message to content script.", err);
+      // If the content script isn't ready or we are on a restricted page
+      console.warn("SmartCompare: Could not toggle overlay. Ensure content script is loaded.", err);
     });
   }
 });
