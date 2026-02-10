@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProductPage } from './components/ProductPage';
 import { SmartOverlay } from './components/SmartOverlay';
 import { CURRENT_PRODUCT, COMPETITOR_PRODUCTS, MOCK_REVIEWS } from './constants';
-import { analyzeProductComparison, findLiveDeals } from './services/geminiService';
+import { analyzeProductComparison, findLiveDeals, checkAuthStatus } from './services/geminiService';
 import { PriceHistoryService } from './services/priceHistoryService';
 import { AnalysisResult, ViewState, Product } from './types';
 import { AlertCircle } from 'lucide-react';
@@ -35,19 +35,28 @@ const App: React.FC<AppProps> = ({ isExtensionOverride = false }) => {
   const [hasValidated, setHasValidated] = useState(false);
 
   useEffect(() => {
-    // Check for API key presence
-    if (!process.env.API_KEY) {
-      setApiKeyMissing(true);
-    }
-    
-    // Check if running as a Chrome Extension (Side Panel or Popup or Injected)
-    if (isExtensionOverride || (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id)) {
-      setIsExtensionMode(true);
-      // If we are mounting for the first time in extension mode, we might want to start minimized or hidden
-      if (!isExtensionOverride) {
-         setViewState(ViewState.EXPANDED); // Side panel default
+    const init = async () => {
+       // Check if running as a Chrome Extension (Side Panel or Popup or Injected)
+      const isExt = isExtensionOverride || (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
+      
+      if (isExt) {
+        setIsExtensionMode(true);
+        // If we are mounting for the first time in extension mode, we might want to start minimized or hidden
+        if (!isExtensionOverride) {
+           setViewState(ViewState.EXPANDED); // Side panel default
+        }
+
+        // Securely check API key status without exposing it
+        const hasKey = await checkAuthStatus();
+        if (!hasKey) {
+          setApiKeyMissing(true);
+        }
+      } else {
+        // In web/demo mode, we assume key is missing because we can't access background
+        setApiKeyMissing(true);
       }
-    }
+    };
+    init();
 
     // Listen for toggle event from content script
     const handleToggle = () => {
@@ -68,7 +77,7 @@ const App: React.FC<AppProps> = ({ isExtensionOverride = false }) => {
     const validateAndDiscover = async () => {
       if (hasValidated) return;
       
-      if (!process.env.API_KEY) {
+      if (apiKeyMissing) {
         // Fallback for Demo/Mock mode: Skip validation but allow analysis to proceed with mock data
         console.warn("API Key missing: Skipping validation, enabling demo mode.");
         setHasValidated(true);
@@ -174,7 +183,7 @@ const App: React.FC<AppProps> = ({ isExtensionOverride = false }) => {
     if (viewState === ViewState.EXPANDED) {
       validateAndDiscover();
     }
-  }, [viewState, hasValidated]);
+  }, [viewState, hasValidated, apiKeyMissing]);
 
   // Run Analysis when competitors change (and are validated)
   useEffect(() => {
