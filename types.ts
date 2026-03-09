@@ -1,4 +1,3 @@
-
 export interface Product {
   id: string;
   externalId?: string; // ASIN, Item ID, SKU, etc.
@@ -9,14 +8,14 @@ export interface Product {
   image: string;
   rating: number;
   reviewCount: number;
-  condition: 'New' | 'Refurbished' | 'Used';
+  condition: "New" | "Refurbished" | "Used";
   shipping: string;
   sellerTrustScore: number; // 0 to 100
   url: string;
-  platform: 'Amazon' | 'eBay' | 'BestBuy' | 'Walmart' | 'Direct';
-  priceTrend?: 'up' | 'down' | 'stable';
+  platform: "Amazon" | "eBay" | "BestBuy" | "Walmart" | "Flipkart" | "Direct";
+  priceTrend?: "up" | "down" | "stable";
   averagePrice?: number;
-  verificationStatus?: 'verified' | 'unverified' | 'searching' | 'failed';
+  verificationStatus?: "verified" | "unverified" | "searching" | "failed";
   isAlternative?: boolean; // Indicates if this product was found as a fallback for an invalid link
 }
 
@@ -48,11 +47,11 @@ export interface AnalysisResult {
 export enum ViewState {
   HIDDEN,
   MINIMIZED,
-  EXPANDED
+  EXPANDED,
 }
 
 export interface ChatMessage {
-  role: 'user' | 'model';
+  role: "user" | "model";
   text: string;
 }
 

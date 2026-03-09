@@ -1,0 +1,437 @@
+/* ═══════════════════════════════════════════════════
+   SmartCompare AI — v2 Global Styles (2026 Edition)
+   Futuristic / Cyberpunk / Gen-Z Aesthetic
+   ═══════════════════════════════════════════════════ */
+
+@import "tailwindcss";
+
+/* ── CSS Design Variables ──────────────────────── */
+:root {
+  /* Primary */
+  --sc-electric-purple: #7b2ff2;
+  --sc-neon-blue: #00c2ff;
+  --sc-deep-space: #05060f;
+
+  /* Accent */
+  --sc-cyber-pink: #ff2e97;
+  --sc-glow-cyan: #00ffe0;
+  --sc-gradient-violet: #a855f7;
+
+  /* Surfaces */
+  --sc-surface-base: #080a14;
+  --sc-surface-card: rgba(12, 14, 28, 0.65);
+  --sc-surface-elevated: rgba(20, 22, 44, 0.55);
+  --sc-surface-glass: rgba(16, 18, 36, 0.45);
+
+  /* Borders */
+  --sc-border-subtle: rgba(123, 47, 242, 0.12);
+  --sc-border-glow: rgba(0, 194, 255, 0.25);
+
+  /* Text */
+  --sc-text-primary: #f0f2ff;
+  --sc-text-secondary: #8b8fae;
+  --sc-text-muted: #4a4d6a;
+
+  /* Semantic */
+  --sc-success: #00ff94;
+  --sc-warning: #ffb800;
+  --sc-danger: #ff3366;
+}
+
+/* ── Base Reset ────────────────────────────────── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: auto; /* Lenis handles smooth scroll */
+}
+
+body {
+  background: var(--sc-deep-space);
+  color: var(--sc-text-primary);
+  font-family: "Inter", "SF Pro Display", system-ui, sans-serif;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+/* ── Selection Styles ─────────────────────────── */
+::selection {
+  background: rgba(123, 47, 242, 0.3);
+  color: #f0f2ff;
+}
+
+::-moz-selection {
+  background: rgba(123, 47, 242, 0.3);
+  color: #f0f2ff;
+}
+
+/* ── Custom Scrollbar ─────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(123, 47, 242, 0.25);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(123, 47, 242, 0.45);
+}
+
+/* Hide scrollbar for carousel */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Canvas container ─────────────────────────── */
+canvas {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Focus Visible ────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--sc-electric-purple);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Animated gradient text utility ───────────── */
+.text-gradient-animated {
+  background: linear-gradient(
+    270deg,
+    var(--sc-electric-purple),
+    var(--sc-neon-blue),
+    var(--sc-cyber-pink),
+    var(--sc-glow-cyan)
+  );
+  background-size: 400% 400%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientShift 8s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* ── Glow pulse keyframe ──────────────────────── */
+@keyframes glowPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(123, 47, 242, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 40px rgba(123, 47, 242, 0.4),
+      0 0 80px rgba(0, 194, 255, 0.15);
+  }
+}
+
+.glow-pulse {
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+/* ── Scan line overlay ────────────────────────── */
+@keyframes scanLine {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+.scan-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--sc-neon-blue),
+    transparent
+  );
+  animation: scanLine 6s linear infinite;
+  opacity: 0.15;
+}
+
+/* ── Floating animation ───────────────────────── */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.float-slow {
+  animation: float 6s ease-in-out infinite;
+}
+
+.float-medium {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* ── Grid dot pattern background ──────────────── */
+.dot-grid-bg {
+  background-image: radial-gradient(
+    circle,
+    rgba(123, 47, 242, 0.08) 1px,
+    transparent 1px
+  );
+  background-size: 30px 30px;
+}
+
+/* ── Holographic shimmer ──────────────────────── */
+@keyframes holoShimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.holo-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(123, 47, 242, 0.06),
+    rgba(0, 194, 255, 0.08),
+    rgba(255, 46, 151, 0.06),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: holoShimmer 4s linear infinite;
+}
+
+/* ── Lenis overrides ──────────────────────────── */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+.lenis.lenis-scrolling iframe {
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════
+   Background Atmosphere Animations
+   ═══════════════════════════════════════════════════ */
+
+/* ── Orb drift animations ─────────────────────── */
+@keyframes orbDrift1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    transform: translate(40px, 30px) scale(1.05);
+  }
+  50% {
+    transform: translate(-20px, 60px) scale(0.95);
+  }
+  75% {
+    transform: translate(30px, -20px) scale(1.02);
+  }
+}
+@keyframes orbDrift2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    transform: translate(-50px, -30px) scale(1.03);
+  }
+  50% {
+    transform: translate(30px, -50px) scale(0.97);
+  }
+  75% {
+    transform: translate(-20px, 40px) scale(1.05);
+  }
+}
+@keyframes orbDrift3 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(60px, -40px) scale(1.04);
+  }
+  66% {
+    transform: translate(-40px, 20px) scale(0.96);
+  }
+}
+@keyframes orbDrift4 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-30px, 50px) scale(1.06);
+  }
+  66% {
+    transform: translate(50px, -30px) scale(0.94);
+  }
+}
+@keyframes orbDrift5 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, -40px) scale(1.03);
+  }
+}
+
+.orb-drift-1 {
+  animation: orbDrift1 20s ease-in-out infinite;
+}
+.orb-drift-2 {
+  animation: orbDrift2 25s ease-in-out infinite;
+}
+.orb-drift-3 {
+  animation: orbDrift3 18s ease-in-out infinite;
+}
+.orb-drift-4 {
+  animation: orbDrift4 22s ease-in-out infinite;
+}
+.orb-drift-5 {
+  animation: orbDrift5 16s ease-in-out infinite;
+}
+
+/* ── Light beam animations ────────────────────── */
+@keyframes beamSweep1 {
+  0% {
+    transform: translateX(-100%) rotate(35deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(200vw) rotate(35deg);
+    opacity: 0;
+  }
+}
+@keyframes beamSweep2 {
+  0% {
+    transform: translateX(200vw) rotate(-25deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-100%) rotate(-25deg);
+    opacity: 0;
+  }
+}
+@keyframes beamSweep3 {
+  0% {
+    transform: translateX(-50%) rotate(15deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(150vw) rotate(15deg);
+    opacity: 0;
+  }
+}
+
+.light-beam {
+  position: absolute;
+  width: 300px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(123, 47, 242, 0.12),
+    rgba(0, 194, 255, 0.08),
+    transparent
+  );
+  filter: blur(1px);
+}
+
+.light-beam-1 {
+  top: 25%;
+  animation: beamSweep1 12s linear infinite;
+  animation-delay: 0s;
+}
+.light-beam-2 {
+  top: 55%;
+  width: 400px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 194, 255, 0.1),
+    rgba(255, 46, 151, 0.06),
+    transparent
+  );
+  animation: beamSweep2 16s linear infinite;
+  animation-delay: 4s;
+}
+.light-beam-3 {
+  top: 78%;
+  width: 250px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 255, 224, 0.08),
+    rgba(123, 47, 242, 0.06),
+    transparent
+  );
+  animation: beamSweep3 14s linear infinite;
+  animation-delay: 8s;
+}

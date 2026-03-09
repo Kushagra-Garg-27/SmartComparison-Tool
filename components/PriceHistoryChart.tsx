@@ -1,114 +1,152 @@
-import React, { useState, useMemo } from 'react';
-import { PricePoint } from '../types';
-import { Calendar, TrendingDown, TrendingUp, Info } from 'lucide-react';
+import React, { useState, useMemo } from "react";
+import { motion } from "framer-motion";
+import { PricePoint } from "../types";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
+import { TrendingDown, TrendingUp, Calendar, Target, Zap } from "lucide-react";
 
 interface PriceHistoryChartProps {
   data: PricePoint[];
   productTitle: string;
 }
 
-type TimeRange = '1W' | '1M' | 'ALL';
+type TimeRange = "1W" | "1M" | "ALL";
 
-export const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ data, productTitle }) => {
-  const [range, setRange] = useState<TimeRange>('1M');
-  const [hoveredPoint, setHoveredPoint] = useState<PricePoint | null>(null);
-  const [hoverPos, setHoverPos] = useState<{x: number, y: number} | null>(null);
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  const point = payload[0].payload;
+  return (
+    <div className="glass-card px-3 py-2 border border-indigo-500/30 shadow-xl">
+      <p className="text-sm font-bold text-white">${point.price.toFixed(2)}</p>
+      <p className="text-[10px] text-white/50">
+        {new Date(point.timestamp).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })}
+      </p>
+      <p className="text-[9px] text-indigo-300 mt-0.5">{point.vendor}</p>
+    </div>
+  );
+};
 
-  // Filter Data based on Range
+export const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({
+  data,
+  productTitle,
+}) => {
+  const [range, setRange] = useState<TimeRange>("1M");
+
   const filteredData = useMemo(() => {
     if (!data.length) return [];
     const now = Date.now();
     const oneDay = 86400000;
-    
     let cutoff = 0;
-    if (range === '1W') cutoff = now - (oneDay * 7);
-    if (range === '1M') cutoff = now - (oneDay * 30);
-    
-    return data.filter(d => d.timestamp >= cutoff);
+    if (range === "1W") cutoff = now - oneDay * 7;
+    if (range === "1M") cutoff = now - oneDay * 30;
+    return data.filter((d) => d.timestamp >= cutoff);
   }, [data, range]);
-
-  // Dimensions
-  const width = 100; // viewBox units
-  const height = 50; // viewBox units
-  const padding = 5;
 
   if (filteredData.length < 2) {
     return (
-      <div className="h-48 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-gray-100">
-        <Info className="h-6 w-6 mb-2" />
+      <motion.div
+        className="glass-card p-6 flex flex-col items-center justify-center text-white/30"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <Calendar className="h-6 w-6 mb-2" />
         <span className="text-xs">Not enough price history yet.</span>
-      </div>
+      </motion.div>
     );
   }
 
-  // Calculate Scales
-  const prices = filteredData.map(d => d.price);
-  const minPrice = Math.min(...prices) * 0.98; // Add little buffer
-  const maxPrice = Math.max(...prices) * 1.02;
-  const minTime = filteredData[0].timestamp;
-  const maxTime = filteredData[filteredData.length - 1].timestamp;
-
-  const getX = (timestamp: number) => {
-    return padding + ((timestamp - minTime) / (maxTime - minTime)) * (width - (padding * 2));
-  };
-
-  const getY = (price: number) => {
-    return height - padding - ((price - minPrice) / (maxPrice - minPrice)) * (height - (padding * 2));
-  };
-
-  // Generate Path
-  const points = filteredData.map(d => `${getX(d.timestamp)},${getY(d.price)}`).join(' ');
-  const areaPoints = `${getX(minTime)},${height} ${points} ${getX(maxTime)},${height}`;
-
-  // Find Lowest Price Point
-  const lowestPoint = filteredData.reduce((prev, curr) => curr.price < prev.price ? curr : prev);
-  const highestPoint = filteredData.reduce((prev, curr) => curr.price > prev.price ? curr : prev);
-
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const svg = e.currentTarget;
-    const rect = svg.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    
-    // Map visual X back to Data Index
-    const relativeX = (x / rect.width) * width; // Convert to viewBox coordinates
-    const chartX = Math.max(padding, Math.min(width - padding, relativeX));
-    const percentX = (chartX - padding) / (width - padding * 2);
-    const timeAtX = minTime + (percentX * (maxTime - minTime));
-
-    // Find closest point
-    const closest = filteredData.reduce((prev, curr) => {
-      return Math.abs(curr.timestamp - timeAtX) < Math.abs(prev.timestamp - timeAtX) ? curr : prev;
-    });
-
-    setHoveredPoint(closest);
-    setHoverPos({ x: getX(closest.timestamp), y: getY(closest.price) });
-  };
-
+  const prices = filteredData.map((d) => d.price);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
   const currentPrice = filteredData[filteredData.length - 1].price;
   const startPrice = filteredData[0].price;
   const change = currentPrice - startPrice;
   const percentChange = ((change / startPrice) * 100).toFixed(1);
+  const lowestPoint = filteredData.reduce((prev, curr) =>
+    curr.price < prev.price ? curr : prev,
+  );
+
+  // Estimate drop probability (simple heuristic)
+  const recentPrices = filteredData.slice(-5).map((d) => d.price);
+  const isDescending =
+    recentPrices.length >= 3 &&
+    recentPrices[recentPrices.length - 1] < recentPrices[0];
+  const dropProbability = isDescending ? "High" : "Low";
 
   return (
-    <div className="bg-white rounded-lg p-4 border border-gray-100 shadow-sm">
-      <div className="flex justify-between items-start mb-4">
-        <div>
-           <div className="text-xs text-gray-400 uppercase font-semibold tracking-wider">Price Trend</div>
-           <div className="flex items-end space-x-2">
-             <span className="text-2xl font-bold text-gray-900">${currentPrice.toFixed(2)}</span>
-             <span className={`flex items-center text-xs font-medium mb-1.5 ${change < 0 ? 'text-green-600' : 'text-red-500'}`}>
-               {change < 0 ? <TrendingDown className="h-3 w-3 mr-0.5" /> : <TrendingUp className="h-3 w-3 mr-0.5" />}
-               {Math.abs(Number(percentChange))}% ({range})
-             </span>
-           </div>
+    <motion.div
+      className="glass-card overflow-hidden"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.2 }}
+    >
+      {/* Insight pills */}
+      <div className="px-4 pt-4 pb-2 flex flex-wrap gap-2">
+        <div className="flex items-center space-x-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1.5">
+          <Target className="h-3 w-3 text-emerald-400" />
+          <span className="text-[10px] font-medium text-emerald-300">
+            Low: ${minPrice.toFixed(0)}
+          </span>
         </div>
-        <div className="flex bg-gray-100 p-0.5 rounded-lg">
-          {(['1W', '1M', 'ALL'] as TimeRange[]).map(r => (
+        <div className="flex items-center space-x-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-2.5 py-1.5">
+          <Zap className="h-3 w-3 text-indigo-400" />
+          <span className="text-[10px] font-medium text-indigo-300">
+            Drop chance: {dropProbability}
+          </span>
+        </div>
+        {currentPrice <= avgPrice && (
+          <div className="flex items-center space-x-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
+            <TrendingDown className="h-3 w-3 text-amber-400" />
+            <span className="text-[10px] font-medium text-amber-300">
+              Below avg
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Header */}
+      <div className="flex justify-between items-start px-4 pb-2">
+        <div>
+          <div className="text-[10px] text-white/30 uppercase font-semibold tracking-widest">
+            Price Trend
+          </div>
+          <div className="flex items-end space-x-2 mt-0.5">
+            <span className="text-2xl font-extrabold text-white">
+              ${currentPrice.toFixed(2)}
+            </span>
+            <span
+              className={`flex items-center text-xs font-semibold mb-1 ${change < 0 ? "text-emerald-400" : "text-red-400"}`}
+            >
+              {change < 0 ? (
+                <TrendingDown className="h-3 w-3 mr-0.5" />
+              ) : (
+                <TrendingUp className="h-3 w-3 mr-0.5" />
+              )}
+              {Math.abs(Number(percentChange))}%
+            </span>
+          </div>
+        </div>
+        <div className="flex bg-white/5 rounded-lg p-0.5 border border-white/10">
+          {(["1W", "1M", "ALL"] as TimeRange[]).map((r) => (
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`px-3 py-1 text-[10px] font-medium rounded-md transition-all ${
-                range === r ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              className={`px-3 py-1 text-[10px] font-semibold rounded-md transition-all ${
+                range === r
+                  ? "bg-indigo-500/30 text-indigo-300 border border-indigo-500/30"
+                  : "text-white/30 hover:text-white/50 border border-transparent"
               }`}
             >
               {r}
@@ -117,80 +155,87 @@ export const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ data, prod
         </div>
       </div>
 
-      <div className="relative w-full h-48">
-        <svg 
-          viewBox={`0 0 ${width} ${height}`} 
-          className="w-full h-full overflow-visible"
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => { setHoveredPoint(null); setHoverPos(null); }}
-        >
-          {/* Gradients */}
-          <defs>
-            <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-
-          {/* Grid Lines */}
-          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#f3f4f6" strokeWidth="0.5" />
-          <line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="#f3f4f6" strokeWidth="0.5" />
-
-          {/* Area Fill */}
-          <path d={areaPoints} fill="url(#chartGradient)" />
-
-          {/* Line Chart */}
-          <polyline 
-            points={points} 
-            fill="none" 
-            stroke="#3b82f6" 
-            strokeWidth="1" 
-            strokeLinecap="round" 
-            strokeLinejoin="round" 
-            className="drop-shadow-sm"
-          />
-
-          {/* Lowest Price Marker (always visible) */}
-          <circle cx={getX(lowestPoint.timestamp)} cy={getY(lowestPoint.price)} r="1.5" fill="#10b981" />
-          
-          {/* Interactive Tooltip Cursor */}
-          {hoveredPoint && hoverPos && (
-             <g>
-                {/* Vertical Line */}
-                <line 
-                  x1={hoverPos.x} y1={padding} 
-                  x2={hoverPos.x} y2={height - padding} 
-                  stroke="#94a3b8" strokeWidth="0.5" strokeDasharray="1,1" 
-                />
-                {/* Point Highlight */}
-                <circle cx={hoverPos.x} cy={hoverPos.y} r="2" fill="white" stroke="#3b82f6" strokeWidth="1" />
-             </g>
-          )}
-        </svg>
-
-        {/* Floating HTML Tooltip for better text rendering */}
-        {hoveredPoint && hoverPos && (
-          <div 
-            className="absolute z-10 pointer-events-none bg-gray-900 text-white text-xs rounded px-2 py-1 shadow-lg transform -translate-x-1/2 -translate-y-full"
-            style={{ 
-              left: `${(hoverPos.x / width) * 100}%`, 
-              top: `${(hoverPos.y / height) * 100}%`,
-              marginTop: '-8px'
-            }}
+      {/* Chart */}
+      <div className="px-2 pb-3" style={{ height: 180 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={filteredData}
+            margin={{ top: 5, right: 10, left: -15, bottom: 0 }}
           >
-            <div className="font-bold">${hoveredPoint.price.toFixed(2)}</div>
-            <div className="text-[9px] text-gray-300">
-              {new Date(hoveredPoint.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-            </div>
-            <div className="text-[8px] text-gray-400 mt-0.5">{hoveredPoint.vendor}</div>
-          </div>
-        )}
+            <defs>
+              <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
+                <stop offset="50%" stopColor="#6366f1" stopOpacity={0.1} />
+                <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis
+              dataKey="timestamp"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 9 }}
+              tickFormatter={(ts) =>
+                new Date(ts).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })
+              }
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              domain={["auto", "auto"]}
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 9 }}
+              tickFormatter={(v) => `$${v}`}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <ReferenceLine
+              y={avgPrice}
+              stroke="rgba(99,102,241,0.3)"
+              strokeDasharray="3 3"
+              label={{
+                value: "Avg",
+                fill: "rgba(99,102,241,0.5)",
+                fontSize: 9,
+                position: "insideTopRight",
+              }}
+            />
+            <Area
+              type="monotone"
+              dataKey="price"
+              stroke="#6366f1"
+              strokeWidth={2}
+              fill="url(#priceGradient)"
+              animationDuration={1500}
+              animationEasing="ease-out"
+              dot={false}
+              activeDot={{
+                r: 4,
+                fill: "#6366f1",
+                stroke: "#fff",
+                strokeWidth: 2,
+              }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
 
-      <div className="mt-2 flex justify-between items-center text-[10px] text-gray-400">
-        <span className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-500 mr-1"></span> Lowest: ${lowestPoint.price.toFixed(2)}</span>
-        <span className="flex items-center"><Calendar className="w-3 h-3 mr-1"/> Data collected via daily snapshots</span>
+      {/* Footer */}
+      <div className="px-4 pb-3 flex justify-between items-center text-[9px] text-white/20">
+        <span className="flex items-center">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 mr-1" />
+          Lowest: ${lowestPoint.price.toFixed(2)} on{" "}
+          {new Date(lowestPoint.timestamp).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+          })}
+        </span>
+        <span className="flex items-center">
+          <Calendar className="w-3 h-3 mr-1" />
+          Price tracking active
+        </span>
       </div>
-    </div>
+    </motion.div>
   );
 };

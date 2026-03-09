@@ -1,12 +1,25 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Product, Review, AnalysisResult, ViewState, ChatMessage } from '../types';
-import { X, MessageSquare, Tag, Sparkles, Send, ChevronRight, Minimize2, Lightbulb, LineChart } from 'lucide-react';
-import { ComparisonTable } from './ComparisonTable';
-import { chatWithShopper } from '../services/geminiService';
-import { PriceHistoryService } from '../services/priceHistoryService';
-import { PriceHistoryChart } from './PriceHistoryChart';
-import { PriceInsights } from './PriceInsights';
-import { GenerateContentResponse } from '@google/genai';
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Product, Review, AnalysisResult, PricePoint } from "../types";
+import {
+  Sparkles,
+  Loader2,
+  X,
+  BarChart3,
+  ShoppingBag,
+  Brain,
+  MessageSquare,
+  Shield,
+} from "lucide-react";
+import { HeroIntelligence } from "./HeroIntelligence";
+import { DealRadar } from "./DealRadar";
+import { StoreCards } from "./StoreCards";
+import { PriceHistoryGraph } from "./PriceHistoryGraph";
+import { AIInsightEngine } from "./AIInsightEngine";
+import { AIForecast } from "./AIForecast";
+import { SellerTrustRadar } from "./SellerTrustRadar";
+import { SmartChat } from "./SmartChat";
+import { PriceHistoryService } from "../services/priceHistoryService";
 
 interface SmartOverlayProps {
   currentProduct: Product;
@@ -14,13 +27,77 @@ interface SmartOverlayProps {
   reviews: Review[];
   analysis: AnalysisResult | null;
   loading: boolean;
-  viewState: ViewState;
-  setViewState: (state: ViewState) => void;
   onRefreshPrices: () => void;
   isRefreshingPrices: boolean;
   lastUpdated: Date;
-  isPanelMode?: boolean;
 }
+
+type TabId = "compare" | "insights" | "history" | "ai";
+
+const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  {
+    id: "compare",
+    label: "Compare",
+    icon: <ShoppingBag className="w-3.5 h-3.5" />,
+  },
+  {
+    id: "insights",
+    label: "Insights",
+    icon: <Brain className="w-3.5 h-3.5" />,
+  },
+  {
+    id: "history",
+    label: "History",
+    icon: <BarChart3 className="w-3.5 h-3.5" />,
+  },
+  { id: "ai", label: "AI", icon: <MessageSquare className="w-3.5 h-3.5" /> },
+];
+
+/** SVG Logo for SmartCompare AI */
+const SmartCompareLogo: React.FC<{ size?: number }> = ({ size = 28 }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+    <defs>
+      <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#6366F1" />
+        <stop offset="50%" stopColor="#8B5CF6" />
+        <stop offset="100%" stopColor="#38BDF8" />
+      </linearGradient>
+      <filter id="logoGlow">
+        <feGaussianBlur stdDeviation="1.5" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+    <rect width="32" height="32" rx="8" fill="url(#logoGrad)" opacity="0.15" />
+    <rect
+      x="1"
+      y="1"
+      width="30"
+      height="30"
+      rx="7"
+      stroke="url(#logoGrad)"
+      strokeWidth="0.5"
+      fill="none"
+      opacity="0.4"
+    />
+    <path
+      d="M16 6L18.5 13L25 13L19.75 17.5L21.5 25L16 20.5L10.5 25L12.25 17.5L7 13L13.5 13Z"
+      fill="url(#logoGrad)"
+      filter="url(#logoGlow)"
+      opacity="0.9"
+    />
+    <path
+      d="M8 22L12 19L16 21L20 16L24 18"
+      stroke="#38BDF8"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      opacity="0.7"
+    />
+  </svg>
+);
 
 export const SmartOverlay: React.FC<SmartOverlayProps> = ({
   currentProduct,
@@ -28,316 +105,273 @@ export const SmartOverlay: React.FC<SmartOverlayProps> = ({
   reviews,
   analysis,
   loading,
-  viewState,
-  setViewState,
   onRefreshPrices,
   isRefreshingPrices,
   lastUpdated,
-  isPanelMode = false
 }) => {
-  const [activeTab, setActiveTab] = useState<'compare' | 'history' | 'chat'>('compare');
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<TabId>("compare");
+  const historyData: PricePoint[] = PriceHistoryService.getHistory(
+    currentProduct.id,
+  );
 
-  // Auto-scroll chat
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [chatHistory, isTyping]);
-
-  const handleSendChat = async () => {
-    if (!input.trim()) return;
-    
-    const userMsg: ChatMessage = { role: 'user', text: input };
-    setChatHistory(prev => [...prev, userMsg]);
-    setInput('');
-    setIsTyping(true);
-
-    try {
-      const context = `Current: ${currentProduct.title} ($${currentProduct.price}). Competitors: ${competitors.length} available. Analysis: ${analysis?.summary}`;
-      const responseStream = await chatWithShopper(chatHistory, userMsg.text, context);
-      
-      let fullResponse = '';
-      setChatHistory(prev => [...prev, { role: 'model', text: '' }]);
-
-      for await (const chunk of responseStream) {
-        const c = chunk as GenerateContentResponse;
-        if (c.text) {
-          fullResponse += c.text;
-          setChatHistory(prev => {
-            const newHistory = [...prev];
-            newHistory[newHistory.length - 1].text = fullResponse;
-            return newHistory;
-          });
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      setChatHistory(prev => [...prev, { role: 'model', text: "Sorry, I'm having trouble connecting to Gemini right now." }]);
-    } finally {
-      setIsTyping(false);
-    }
-  };
-
-  // Get Historical Data
-  const historyData = PriceHistoryService.getHistory(currentProduct.id);
-
-  if (viewState === ViewState.HIDDEN) return null;
-
-  // Minimized Bubble State - Only show if NOT in panel mode
-  if (viewState === ViewState.MINIMIZED && !isPanelMode) {
+  // ── Loading state ──
+  if (loading) {
     return (
-      <div 
-        className="fixed bottom-6 right-6 z-50 animate-bounce-in"
-      >
-        <button
-          onClick={() => setViewState(ViewState.EXPANDED)}
-          className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full p-4 shadow-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center space-x-2"
-        >
-          <Sparkles className="h-6 w-6" />
-          <span className="font-semibold">Smart Compare</span>
-          {analysis && (
-            <span className="bg-white text-purple-600 text-xs font-bold px-2 py-0.5 rounded-full">
-              -${(currentProduct.price - (competitors.find(c => c.id === analysis.bestPriceId)?.price || 0)).toFixed(0)}
+      <div className="relative h-screen w-full bg-space flex flex-col noise-overlay">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <SmartCompareLogo size={28} />
+            <span className="text-sm font-bold text-white tracking-tight font-display">
+              SmartCompare<span className="text-gradient-ai"> AI</span>
             </span>
-          )}
-        </button>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center space-y-5">
+          <motion.div
+            className="relative"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="h-20 w-20 rounded-3xl bg-gradient-to-br from-ai-indigo/15 to-ai-purple/15 border border-ai-indigo/15 flex items-center justify-center">
+              <Sparkles className="h-8 w-8 text-ai-indigo/60 animate-pulse" />
+            </div>
+            <Loader2 className="absolute -top-1 -right-1 h-5 w-5 text-ai-indigo animate-spin" />
+            <div className="absolute inset-0 bg-ai-indigo/15 rounded-3xl blur-2xl" />
+          </motion.div>
+          <div className="text-center">
+            <p className="text-sm font-semibold text-white/80 font-display">
+              Analyzing market data…
+            </p>
+            <p className="text-xs text-white/25 mt-1">
+              Comparing prices across stores
+            </p>
+          </div>
+          <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-gradient-to-r from-ai-indigo via-ai-purple to-ai-blue rounded-full"
+              initial={{ x: "-100%" }}
+              animate={{ x: "200%" }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              style={{ width: "40%" }}
+            />
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Determine container classes based on mode
-  const containerClasses = isPanelMode 
-    ? "relative h-screen w-full bg-white flex flex-col" // Full screen for Side Panel
-    : "fixed top-0 right-0 h-full w-full sm:w-[400px] bg-white shadow-2xl z-50 flex flex-col border-l border-gray-200 transition-transform duration-300 transform translate-x-0"; // Floating overlay
-
-  // Expanded Overlay State (or Panel Mode)
-  return (
-    <div className={containerClasses}>
-      
-      {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-900 to-blue-900 text-white p-4 flex items-center justify-between shadow-md flex-shrink-0">
-        <div className="flex items-center space-x-2">
-          <Sparkles className="h-5 w-5 text-yellow-300" />
-          <h2 className="text-lg font-bold">SmartCompare AI</h2>
-        </div>
-        
-        {/* Only show window controls if NOT in panel mode */}
-        {!isPanelMode && (
-          <div className="flex items-center space-x-2">
-            <button onClick={() => setViewState(ViewState.MINIMIZED)} className="p-1 hover:bg-white/10 rounded">
-              <Minimize2 className="h-4 w-4" />
-            </button>
-            <button onClick={() => setViewState(ViewState.HIDDEN)} className="p-1 hover:bg-white/10 rounded">
-              <X className="h-5 w-5" />
-            </button>
+  // ── No analysis available ──
+  if (!analysis) {
+    return (
+      <div className="relative h-screen w-full bg-space flex flex-col noise-overlay">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <SmartCompareLogo size={28} />
+            <span className="text-sm font-bold text-white tracking-tight font-display">
+              SmartCompare<span className="text-gradient-ai"> AI</span>
+            </span>
           </div>
-        )}
+        </div>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center">
+            <div className="h-14 w-14 rounded-2xl bg-risk/8 border border-risk/15 flex items-center justify-center mx-auto mb-3">
+              <X className="h-6 w-6 text-risk/60" />
+            </div>
+            <p className="text-sm font-semibold text-white/60 font-display">
+              Analysis unavailable
+            </p>
+            <p className="text-xs text-white/25 mt-1">
+              Visit a product page to compare prices
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const allProducts = [currentProduct, ...competitors];
+
+  // ── Main panel layout — AI Command Center ──
+  return (
+    <div className="relative h-screen w-full bg-space flex flex-col noise-overlay">
+      {/* ─── Top bar ─── */}
+      <div className="relative flex items-center justify-between px-4 py-2 flex-shrink-0 z-20">
+        <div className="absolute inset-0 bg-space/80 backdrop-blur-xl" />
+        <div className="absolute bottom-0 left-0 right-0 neon-line" />
+        <div className="relative flex items-center gap-2">
+          <motion.div
+            whileHover={{ scale: 1.08 }}
+            transition={{ type: "spring", stiffness: 400 }}
+          >
+            <SmartCompareLogo size={24} />
+          </motion.div>
+          <span className="text-[13px] font-bold text-white tracking-tight font-display">
+            SmartCompare<span className="text-gradient-ai"> AI</span>
+          </span>
+        </div>
+        <div className="relative flex items-center gap-1.5 text-[9px] text-white/20">
+          <span className="h-1.5 w-1.5 rounded-full bg-deal animate-pulse" />
+          <span>Live</span>
+        </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar bg-gray-50">
-        
-        {loading ? (
-          <div className="flex flex-col items-center justify-center h-full space-y-4">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
-            <p className="text-gray-500 animate-pulse">Gemini is analyzing market data...</p>
+      {/* ─── Scrollable content — AI Command Center ─── */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+        {/* Section 1: Hero Intelligence — always visible */}
+        <HeroIntelligence
+          product={currentProduct}
+          competitors={competitors}
+          bestPriceId={analysis.bestPriceId}
+        />
+
+        {/* ─── Premium Tab Navigation ─── */}
+        <div className="sticky top-0 z-30 flex-shrink-0">
+          <div className="relative px-3 pt-2 pb-0 bg-space/90 backdrop-blur-xl">
+            <div className="flex items-center gap-0.5 relative">
+              {TABS.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className="nav-tab-v2 group"
+                  >
+                    <span
+                      className={`nav-tab-icon ${isActive ? "nav-tab-icon-active" : "nav-tab-icon-inactive"}`}
+                    >
+                      {tab.icon}
+                    </span>
+                    <span
+                      className={`text-[11px] font-semibold transition-colors duration-200 ${isActive ? "text-white" : "text-white/30 group-hover:text-white/55"}`}
+                    >
+                      {tab.label}
+                    </span>
+                    {isActive && (
+                      <motion.div
+                        className="nav-tab-underline"
+                        layoutId="activeTabUnderline"
+                        transition={{
+                          type: "spring",
+                          stiffness: 500,
+                          damping: 35,
+                        }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-0 neon-line opacity-30" />
           </div>
-        ) : !analysis ? (
-           <div className="p-6 text-center text-red-500">
-             {isPanelMode ? "Select a product to compare (Demo Mode Active)" : "Analysis failed. Check API Key."}
-           </div>
-        ) : (
-          <>
-            {/* AI Summary Card (Only show on Compare tab to save space on others) */}
-            {activeTab === 'compare' && (
-              <div className="p-4 bg-white m-3 rounded-lg shadow-sm border border-purple-100">
-                <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0">
-                    <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
-                      <Sparkles className="h-4 w-4 text-purple-600" />
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900">Gemini Verdict</h3>
-                    <p className="text-sm text-gray-600 mt-1 leading-relaxed">
-                      {analysis.summary}
-                    </p>
-                    <div className="mt-2 text-xs font-medium text-purple-700 bg-purple-50 inline-block px-2 py-1 rounded">
-                      Recommendation: {analysis.recommendation}
-                    </div>
-                  </div>
-                </div>
-              </div>
+        </div>
+
+        {/* ─── Tab Content ─── */}
+        <div className="flex-1 p-3">
+          <AnimatePresence mode="wait">
+            {activeTab === "compare" && (
+              <motion.div
+                key="compare"
+                className="space-y-3"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <StoreCards
+                  currentProduct={currentProduct}
+                  competitors={competitors}
+                  bestPriceId={analysis.bestPriceId}
+                  bestValueId={analysis.bestValueId}
+                  trustWarningId={analysis.trustWarningId}
+                  onRefreshPrices={onRefreshPrices}
+                  isRefreshingPrices={isRefreshingPrices}
+                  lastUpdated={lastUpdated}
+                />
+              </motion.div>
             )}
 
-            {/* Tabs */}
-            <div className="px-4 border-b border-gray-200 bg-white sticky top-0 z-10">
-              <div className="flex -mb-px">
-                <button
-                  onClick={() => setActiveTab('compare')}
-                  className={`flex-1 py-3 px-1 text-center border-b-2 text-sm font-medium ${
-                    activeTab === 'compare'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Tag className="inline-block h-4 w-4 mr-2" />
-                  Compare
-                </button>
-                <button
-                  onClick={() => setActiveTab('history')}
-                  className={`flex-1 py-3 px-1 text-center border-b-2 text-sm font-medium ${
-                    activeTab === 'history'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <LineChart className="inline-block h-4 w-4 mr-2" />
-                  History
-                </button>
-                <button
-                  onClick={() => setActiveTab('chat')}
-                  className={`flex-1 py-3 px-1 text-center border-b-2 text-sm font-medium ${
-                    activeTab === 'chat'
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <MessageSquare className="inline-block h-4 w-4 mr-2" />
-                  Ask
-                </button>
-              </div>
-            </div>
+            {activeTab === "insights" && (
+              <motion.div
+                key="insights"
+                className="space-y-3"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <DealRadar
+                  product={currentProduct}
+                  competitors={competitors}
+                  bestPriceId={analysis.bestPriceId}
+                />
+                <AIForecast
+                  currentProduct={currentProduct}
+                  competitors={competitors}
+                />
+                <SellerTrustRadar products={allProducts} />
+                <AIInsightEngine
+                  currentProduct={currentProduct}
+                  competitors={competitors}
+                  analysis={analysis}
+                />
+              </motion.div>
+            )}
 
-            {/* Tab Content */}
-            <div className="p-4">
-              {activeTab === 'compare' && (
-                <div className="space-y-6">
-                  {/* Price Table */}
-                  <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                     <ComparisonTable 
-                       currentProduct={currentProduct}
-                       competitors={competitors}
-                       bestPriceId={analysis.bestPriceId}
-                       bestValueId={analysis.bestValueId}
-                       trustWarningId={analysis.trustWarningId}
-                       onRefreshPrices={onRefreshPrices}
-                       isRefreshingPrices={isRefreshingPrices}
-                       lastUpdated={lastUpdated}
-                     />
-                  </div>
+            {activeTab === "history" && (
+              <motion.div
+                key="history"
+                className="space-y-3"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <PriceHistoryGraph
+                  data={historyData}
+                  productTitle={currentProduct.title}
+                />
+              </motion.div>
+            )}
 
-                  {/* Smart Alternatives */}
-                  {analysis.alternatives && analysis.alternatives.length > 0 && (
-                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg border border-indigo-100 p-3">
-                      <div className="flex items-center space-x-2 mb-3">
-                        <Lightbulb className="h-4 w-4 text-indigo-600" />
-                        <h4 className="text-xs font-bold text-indigo-800 uppercase">Consider These Alternatives</h4>
-                      </div>
-                      <div className="space-y-2">
-                        {analysis.alternatives.map((alt, idx) => (
-                          <div key={idx} className="bg-white rounded p-2 flex justify-between items-center shadow-sm">
-                             <div>
-                               <div className="text-xs font-semibold text-gray-900">{alt.title}</div>
-                               <div className="text-[10px] text-gray-500">{alt.reason}</div>
-                             </div>
-                             <div className="text-xs font-bold text-indigo-700">~${alt.price}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Pros & Cons */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-                       <h4 className="text-xs font-bold text-green-800 uppercase mb-2">Pros</h4>
-                       <ul className="text-xs text-green-900 space-y-1">
-                         {analysis.pros.map((p, i) => <li key={i} className="flex items-start"><ChevronRight className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0"/>{p}</li>)}
-                       </ul>
-                    </div>
-                    <div className="bg-red-50 p-3 rounded-lg border border-red-100">
-                       <h4 className="text-xs font-bold text-red-800 uppercase mb-2">Cons</h4>
-                       <ul className="text-xs text-red-900 space-y-1">
-                         {analysis.cons.map((c, i) => <li key={i} className="flex items-start"><ChevronRight className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0"/>{c}</li>)}
-                       </ul>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {activeTab === 'history' && (
-                <div className="space-y-4">
-                  <PriceHistoryChart 
-                    data={historyData} 
-                    productTitle={currentProduct.title} 
-                  />
-                  
-                  <PriceInsights 
-                    history={historyData} 
-                    currentPrice={currentProduct.price}
-                  />
-                </div>
-              )}
-
-              {activeTab === 'chat' && (
-                <div className="flex flex-col h-[400px]">
-                  <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1">
-                    {chatHistory.length === 0 && (
-                      <div className="text-center text-gray-400 text-sm mt-10">
-                        Ask about return policies, compatibility, or specific specs.
-                      </div>
-                    )}
-                    {chatHistory.map((msg, idx) => (
-                      <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                          msg.role === 'user' 
-                          ? 'bg-blue-600 text-white' 
-                          : 'bg-gray-200 text-gray-800'
-                        }`}>
-                          {msg.text}
-                        </div>
-                      </div>
-                    ))}
-                    {isTyping && (
-                      <div className="flex justify-start">
-                        <div className="bg-gray-200 rounded-lg px-3 py-2 text-sm text-gray-500 animate-pulse">
-                          Thinking...
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
-                      placeholder="Ask about this product..."
-                      className="w-full border border-gray-300 rounded-full py-2 pl-4 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button 
-                      onClick={handleSendChat}
-                      className="absolute right-1 top-1 p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700"
-                    >
-                      <Send className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+            {activeTab === "ai" && (
+              <motion.div
+                key="ai"
+                className="space-y-3"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <SmartChat
+                  currentProduct={currentProduct}
+                  competitors={competitors}
+                  analysis={analysis}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
-      
-      {/* Footer */}
-      <div className="bg-gray-100 p-2 text-center text-xs text-gray-400 border-t flex-shrink-0">
-        Powered by Gemini 3.0 • Hackathon Demo
+
+      {/* ─── Footer ─── */}
+      <div className="relative flex-shrink-0 z-20">
+        <div className="absolute inset-0 bg-space/80 backdrop-blur-xl" />
+        <div className="absolute top-0 left-0 right-0 neon-line" />
+        <div className="relative px-4 py-1.5 flex items-center justify-between">
+          <span className="text-[9px] text-white/20">
+            Powered by{" "}
+            <span className="font-semibold text-gradient-ai">Gemini</span> •
+            SmartCompare AI
+          </span>
+          <span className="text-[9px] text-white/15">
+            {competitors.length} stores compared
+          </span>
+        </div>
       </div>
     </div>
   );
