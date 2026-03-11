@@ -1,35 +1,14 @@
 {
-  "name": "smartcompare-ai",
+  "name": "smartcomparison-tool",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && vite build --config vite.background.config.ts && vite build --config vite.content.config.ts",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@google/genai": "^1.40.0",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.5.0",
-    "@types/three": "^0.183.1",
-    "framer-motion": "^12.35.0",
-    "gsap": "^3.14.2",
-    "lenis": "^1.3.18",
-    "lucide-react": "^0.563.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "recharts": "^3.7.0",
-    "three": "^0.183.2"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.1.3",
-    "autoprefixer": "^10.4.24",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.18",
-    "typescript": "~5.8.2",
-    "vite": "^6.4.1"
+    "dev:backend": "cd backend && npm run dev",
+    "dev:web-app": "cd web-app && npm run dev",
+    "dev:extension": "cd chrome-extension && npm run dev",
+    "build:web-app": "cd web-app && npm run build",
+    "build:extension": "cd chrome-extension && npm run build",
+    "install:all": "cd backend && npm install && cd ../web-app && npm install && cd ../chrome-extension && npm install"
   }
 }

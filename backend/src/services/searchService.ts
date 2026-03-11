@@ -80,6 +80,16 @@ const PLATFORMS: PlatformConfig[] = [
     name: "Flipkart",
     searchUrl: "https://www.flipkart.com/search?q=$Q",
   },
+  {
+    site: "target.com",
+    name: "Target",
+    searchUrl: "https://www.target.com/s?searchTerm=$Q",
+  },
+  {
+    site: "newegg.com",
+    name: "Newegg",
+    searchUrl: "https://www.newegg.com/p/pl?d=$Q",
+  },
 ];
 
 // --- Helpers ---
@@ -154,6 +164,25 @@ function urlToPlatform(url: string): string | null {
   return null;
 }
 
+/** Map a shopping result "source" field (retailer name) to our platform name. */
+function shoppingSourceToPlatform(source: string): string | null {
+  const s = source.toLowerCase();
+  const mappings: Array<[string, string]> = [
+    ["amazon", "Amazon"],
+    ["walmart", "Walmart"],
+    ["best buy", "BestBuy"],
+    ["bestbuy", "BestBuy"],
+    ["ebay", "eBay"],
+    ["flipkart", "Flipkart"],
+    ["target", "Target"],
+    ["newegg", "Newegg"],
+  ];
+  for (const [pattern, platform] of mappings) {
+    if (s.includes(pattern)) return platform;
+  }
+  return null;
+}
+
 // --- Search API Providers ---
 
 interface RawSearchResult {
@@ -162,8 +191,18 @@ interface RawSearchResult {
   snippet: string;
 }
 
+interface ShoppingResult {
+  title: string;
+  source: string; // Retailer name e.g. "Amazon.com", "Best Buy", "Walmart"
+  price: number | null;
+  url: string;
+  imageUrl: string | null;
+  rating: number | null;
+  ratingCount: number | null;
+}
+
 /**
- * Serper.dev — Google Search API
+ * Serper.dev — Google Search API (web results)
  * https://serper.dev/
  */
 async function searchViaSerper(
@@ -194,6 +233,55 @@ async function searchViaSerper(
     url: r.link || "",
     snippet: r.snippet || "",
   }));
+}
+
+/**
+ * Serper.dev — Google Shopping results.
+ * Returns structured product listings with prices from specific retailers.
+ * Uses 1 API credit per call (same as web search).
+ */
+async function shoppingViaSerper(
+  query: string,
+  apiKey: string,
+): Promise<ShoppingResult[]> {
+  const response = await fetch("https://google.serper.dev/shopping", {
+    method: "POST",
+    headers: {
+      "X-API-KEY": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      q: query,
+      num: 20,
+    }),
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Serper Shopping API ${response.status}: ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as any;
+  const shopping: any[] = data.shopping || [];
+  return shopping.map((r: any) => ({
+    title: r.title || "",
+    source: r.source || "",
+    price: typeof r.price === "number" ? r.price : parseShoppingPrice(r.price),
+    url: r.link || "",
+    imageUrl: r.imageUrl || null,
+    rating: typeof r.rating === "number" ? r.rating : null,
+    ratingCount: typeof r.ratingCount === "number" ? r.ratingCount : null,
+  }));
+}
+
+/** Parse price strings from shopping results like "$799.00", "From $699" */
+function parseShoppingPrice(priceStr: string | null | undefined): number | null {
+  if (!priceStr) return null;
+  const cleaned = priceStr.replace(/[₹$€£¥,\s]/g, "").replace(/^from/i, "").trim();
+  const match = cleaned.match(/(\d+\.?\d*)/);
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  return isNaN(value) || value <= 0 ? null : value;
 }
 
 /**
@@ -310,8 +398,10 @@ export class SearchService {
   /**
    * Discover real competitor listings across platforms using a search API.
    *
-   * Falls back to deterministic search-page URLs when no API key is set,
-   * so the backend always returns useful comparison data.
+   * Strategy:
+   * 1. If using Serper, use the Shopping endpoint first (1 API call → many stores)
+   * 2. For missing stores, fall back to site:-scoped web search
+   * 3. When no API key is set, returns deterministic search-page URLs
    */
   async discoverListings(input: DiscoveryInput): Promise<DiscoveredListing[]> {
     const queries = this.buildQueries(input);
@@ -324,37 +414,76 @@ export class SearchService {
       return this.fallbackListings(input, queries);
     }
 
-    // Fire all platform searches concurrently
-    const results = await Promise.allSettled(
-      queries.map(async (q): Promise<DiscoveredListing | null> => {
-        try {
-          const raw = await executeSearch(q.query);
-          // Pick the best product-page result
-          const best = this.pickBestResult(raw, q.platform);
-          if (best) return best;
+    const exclude = (input.currentPlatform || "").toLowerCase();
+    const listings: DiscoveredListing[] = [];
+    const coveredPlatforms = new Set<string>();
 
-          // If site: query didn't yield a good product page, try without site: filter
-          const baseQuery = buildQueryText(input);
-          const fallbackRaw = await executeSearch(`${q.platform} ${baseQuery}`);
-          const fallbackBest = this.pickBestResult(fallbackRaw, q.platform);
-          if (fallbackBest) return fallbackBest;
+    // --- Phase 1: Shopping results (Serper only, 1 API call) ---
+    if (config.searchProvider === "serper") {
+      try {
+        const baseQuery = buildQueryText(input);
+        const shoppingResults = await shoppingViaSerper(baseQuery, config.searchApiKey);
+        console.info(`[SearchService] Shopping API returned ${shoppingResults.length} results`);
 
-          // Last resort: return a search-page URL
-          return this.makeFallbackListing(q, input);
-        } catch (err) {
-          console.error(
-            `[SearchService] ${q.platform} search failed:`,
-            (err as Error).message,
-          );
-          return this.makeFallbackListing(q, input);
+        for (const sr of shoppingResults) {
+          const platform = shoppingSourceToPlatform(sr.source);
+          if (!platform) continue;
+          if (platform.toLowerCase() === exclude) continue;
+          if (coveredPlatforms.has(platform)) continue; // One per store
+
+          if (sr.price && sr.price > 0) {
+            coveredPlatforms.add(platform);
+            listings.push({
+              platform,
+              title: sr.title,
+              url: sr.url,
+              snippet: `${sr.source} — $${sr.price}`,
+              price: sr.price,
+              discoveredVia: "search-api",
+            });
+          }
         }
-      }),
+        console.info(`[SearchService] Shopping covered ${coveredPlatforms.size} platforms: ${[...coveredPlatforms].join(", ")}`);
+      } catch (err) {
+        console.error("[SearchService] Shopping search failed:", (err as Error).message);
+      }
+    }
+
+    // --- Phase 2: Site-scoped web search for uncovered platforms ---
+    const uncoveredQueries = queries.filter(
+      q => !coveredPlatforms.has(q.platform),
     );
 
-    const listings: DiscoveredListing[] = [];
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value) {
-        listings.push(r.value);
+    if (uncoveredQueries.length > 0) {
+      const results = await Promise.allSettled(
+        uncoveredQueries.map(async (q): Promise<DiscoveredListing | null> => {
+          try {
+            const raw = await executeSearch(q.query);
+            const best = this.pickBestResult(raw, q.platform);
+            if (best) return best;
+
+            // Retry without site: filter
+            const baseQuery = buildQueryText(input);
+            const fallbackRaw = await executeSearch(`${q.platform} ${baseQuery}`);
+            const fallbackBest = this.pickBestResult(fallbackRaw, q.platform);
+            if (fallbackBest) return fallbackBest;
+
+            // Last resort: return a search-page URL
+            return this.makeFallbackListing(q, input);
+          } catch (err) {
+            console.error(
+              `[SearchService] ${q.platform} search failed:`,
+              (err as Error).message,
+            );
+            return this.makeFallbackListing(q, input);
+          }
+        }),
+      );
+
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) {
+          listings.push(r.value);
+        }
       }
     }
 

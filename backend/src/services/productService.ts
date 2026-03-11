@@ -10,7 +10,7 @@
  * Will be extended to query PostgreSQL when USE_MEMORY_STORE=false.
  */
 
-import { MemoryStore } from "../store/memoryStore.js";
+import { DatabaseStore } from "../store/databaseStore.js";
 import { SearchService, type DiscoveredListing } from "./searchService.js";
 import { PriceExtractor } from "./priceExtractor.js";
 import type {
@@ -34,7 +34,7 @@ export class ProductService {
   private searchService: SearchService;
   private priceExtractor: PriceExtractor;
 
-  constructor(private store: MemoryStore) {
+  constructor(private store: DatabaseStore) {
     this.searchService = new SearchService();
     this.priceExtractor = new PriceExtractor(3); // concurrency limit
   }
@@ -46,15 +46,15 @@ export class ProductService {
   async identify(input: DetectedProductInput): Promise<IdentifyResponse> {
     // Step 1: Try to find existing canonical product
     let product =
-      (input.gtin ? this.store.findProductByGtin(input.gtin) : null) ||
-      this.store.findProductByTitleBrand(input.title, input.brand);
+      (input.gtin ? await this.store.findProductByGtin(input.gtin) : null) ||
+      await this.store.findProductByTitleBrand(input.title, input.brand);
 
     let isNew = false;
 
     // Step 2: If not found, create a new canonical product
     if (!product) {
       isNew = true;
-      product = this.store.createProduct({
+      product = await this.store.createProduct({
         brand: input.brand,
         model: this.extractModel(input.title, input.brand),
         gtin: input.gtin,
@@ -66,7 +66,7 @@ export class ProductService {
 
     // Step 3: Upsert the listing for the current page
     let currentListing = input.externalId
-      ? this.store.findListingByPlatformExternalId(
+      ? await this.store.findListingByPlatformExternalId(
           input.platform,
           input.externalId,
         )
@@ -74,18 +74,18 @@ export class ProductService {
 
     if (!currentListing) {
       // Ensure seller exists
-      let seller = this.store.findSellerByPlatform(input.platform);
+      let seller = await this.store.findSellerByPlatform(input.platform);
       if (!seller) {
         const meta = PLATFORM_META[input.platform];
-        seller = this.store.addSeller({
+        seller = await this.store.addSeller({
           name: meta?.name || input.platform,
           platform: input.platform,
           trustScore: meta?.trustScore || 80,
         });
       }
 
-      currentListing = this.store.createListing({
-        productId: product.id,
+      currentListing = await this.store.createListing({
+        productId: product!.id,
         platform: input.platform,
         externalId: input.externalId,
         url: input.url,
@@ -97,7 +97,7 @@ export class ProductService {
 
       // Record initial price point
       if (input.price !== null) {
-        this.store.addPriceHistory(
+        await this.store.addPriceHistory(
           currentListing.id,
           input.price,
           input.currency,
@@ -108,8 +108,8 @@ export class ProductService {
       currentListing.lastPrice !== input.price
     ) {
       // Price changed — update listing & record history
-      this.store.updateListingPrice(currentListing.id, input.price);
-      this.store.addPriceHistory(
+      await this.store.updateListingPrice(currentListing.id, input.price);
+      await this.store.addPriceHistory(
         currentListing.id,
         input.price,
         input.currency,
@@ -123,15 +123,16 @@ export class ProductService {
     }
 
     // Step 5: Collect all listings for this product
-    const allListings = this.store.getListingsForProduct(product.id);
-    const listings = allListings.map((l) => this.toProductListing(l));
+    const allListings = await this.store.getListingsForProduct(product!.id);
+    const listings = await Promise.all(allListings.map((l) => this.toProductListing(l)));
 
     return {
-      productId: product.id,
-      canonicalTitle: product.canonicalTitle,
-      brand: product.brand,
-      category: product.category,
+      productId: product!.id,
+      canonicalTitle: product!.canonicalTitle,
+      brand: product!.brand,
+      category: product!.category,
       listings,
+      searchLinks: [],
       matched: !isNew,
     };
   }
@@ -144,7 +145,7 @@ export class ProductService {
     productId: string,
     currentPlatform?: string,
   ): Promise<CompareResponse> {
-    const allListings = this.store.getListingsForProduct(productId);
+    const allListings = await this.store.getListingsForProduct(productId);
 
     if (allListings.length === 0) {
       return {
@@ -154,7 +155,7 @@ export class ProductService {
       };
     }
 
-    const mapped = allListings.map((l) => this.toProductListing(l));
+    const mapped = await Promise.all(allListings.map((l) => this.toProductListing(l)));
 
     // Separate current listing from competitors
     const currentIdx = currentPlatform
@@ -191,20 +192,13 @@ export class ProductService {
   // -----------------------------------------------------------------
 
   async getHistory(productId: string): Promise<PriceHistoryResponse> {
-    const history = this.store.getHistoryForProduct(productId);
+    const history = await this.store.getHistoryForProduct(productId);
 
-    const points = history.map((h) => {
-      // Resolve listing → seller name for the vendor field
-      const listing = this.store.listings.get(h.listingId);
-      const seller = listing?.sellerId
-        ? this.store.getSellerById(listing.sellerId)
-        : null;
-      return {
-        timestamp: new Date(h.recordedAt).getTime(),
-        price: h.price,
-        vendor: seller?.name || listing?.platform || "Unknown",
-      };
-    });
+    const points = history.map((h) => ({
+      timestamp: new Date(h.recordedAt).getTime(),
+      price: h.price,
+      vendor: "Store",
+    }));
 
     const prices = points.map((p) => p.price);
     const allTimeLow = prices.length > 0 ? Math.min(...prices) : 0;
@@ -284,9 +278,9 @@ export class ProductService {
 
     for (const listing of discovered) {
       const meta = PLATFORM_META[listing.platform];
-      let seller = this.store.findSellerByPlatform(listing.platform);
+      let seller = await this.store.findSellerByPlatform(listing.platform);
       if (!seller) {
-        seller = this.store.addSeller({
+        seller = await this.store.addSeller({
           name: meta?.name || listing.platform,
           platform: listing.platform,
           trustScore: meta?.trustScore || 80,
@@ -300,7 +294,7 @@ export class ProductService {
 
       if (extracted) extractedCount++;
 
-      const storedListing = this.store.createListing({
+      const storedListing = await this.store.createListing({
         productId,
         platform: listing.platform,
         externalId: null,
@@ -313,7 +307,7 @@ export class ProductService {
 
       // Generate synthetic price history so charts have data immediately
       if (finalPrice) {
-        this.store.generateSyntheticHistory(
+        await this.store.generateSyntheticHistory(
           storedListing.id,
           finalPrice,
           finalCurrency,
@@ -321,7 +315,7 @@ export class ProductService {
         );
       } else if (source.price) {
         // No price discovered — use source price as baseline for history
-        this.store.generateSyntheticHistory(
+        await this.store.generateSyntheticHistory(
           storedListing.id,
           source.price,
           source.currency,
@@ -363,7 +357,7 @@ export class ProductService {
   }
 
   /** Convert an internal listing record to the API response format. */
-  private toProductListing(listing: {
+  private async toProductListing(listing: {
     platform: string;
     externalId: string | null;
     title: string;
@@ -374,9 +368,9 @@ export class ProductService {
     condition: string;
     inStock: boolean;
     lastChecked: string;
-  }): ProductListing {
+  }): Promise<ProductListing> {
     const seller = listing.sellerId
-      ? this.store.getSellerById(listing.sellerId)
+      ? await this.store.getSellerById(listing.sellerId)
       : null;
     return {
       platform: listing.platform,

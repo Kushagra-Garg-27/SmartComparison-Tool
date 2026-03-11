@@ -1,0 +1,12 @@
+export { apiClient } from "./apiClient";
+export { productService } from "./productService";
+export { listingService } from "./listingService";
+export { priceHistoryService } from "./priceHistoryService";
+export { dealService } from "./dealService";
+export { watchlistService } from "./watchlistService";
+export { alertService } from "./alertService";
+export { affiliateService } from "./affiliateService";
+export { notificationService } from "./notificationService";
+export { chatService } from "./chatService";
+export { intelligenceService } from "./intelligenceService";
+export type * from "./types";
